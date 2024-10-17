@@ -1,0 +1,409 @@
+---
+title: "Posit Connect Usage - Last `r as.numeric(Sys.getenv('DAYSBACK', 30))` Days"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    theme: 
+      version: 4
+      bg: "#fff"
+      fg: "#447099" 
+      primary: "#447099"
+      #navbar-bg: "#447099"
+      base_font: 
+        google: Open Sans
+editor_options: 
+  chunk_output_type: console
+---
+
+    
+```{r preflight_check, results='asis', include=TRUE}
+# ---------------------------------------------------------------------------
+# this section is used to stop the report from rendering
+# if important variables are missing (CONNECT_SERVER and CONNECT_API_KEY)
+# ---------------------------------------------------------------------------
+# if (
+#   nchar(Sys.getenv("CONNECT_SERVER")) == 0 ||
+#   nchar(Sys.getenv("CONNECT_API_KEY")) == 0
+# ) {
+#   print(htmltools::h4("ERROR: Variables Not Defined"))
+#   print(htmltools::div(
+#     "The CONNECT_SERVER and CONNECT_API_KEY",
+#     "environment variables are required in order for this report",
+#     "to pull usage data.",
+#     htmltools::br(),
+#     htmltools::br(),
+#     "Please define these variables",
+#     "and then re-run the report.",
+#     htmltools::br(),
+#     htmltools::br(),
+#     style = "max-width: 600px"
+#   ))
+#   knitr::knit_exit("Terminating the report early.")
+# }
+```
+
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(dplyr)
+library(plotly)
+library(ggplot2)
+library(shiny)
+library(lubridate)
+library(blastula)
+library(prettyunits)
+library(connectapi)
+library(thematic)
+library(showtext)
+
+############################################################
+
+library(dplyr)
+library(tidyr)
+library(lubridate)
+
+# Set seed for reproducibility
+set.seed(42)
+
+# Generate 336 rows of data for shiny_rsc
+content_guids <- c("guid_1", "guid_2", "guid_3", "guid_4", "guid_5")
+user_guids <- c(paste0("user_", 1:20), rep(NA, 10))  # Mix of identified and anonymous users
+content_names <- c("No-Code Modeling App", "Sales Dashboard", "Marketing Report", "Data Analysis Tool", "Executive Report")
+
+# Date range (last 30 days)
+end_date <- as_datetime("2024-10-16")
+start_date <- end_date - days(30)
+
+# Generate session data
+shiny_rsc <- tibble(
+  content_guid = sample(content_guids, 336, replace = TRUE),
+  user_guid = sample(user_guids, 336, replace = TRUE),
+  started = start_date + days(sample(0:30, 336, replace = TRUE)) +
+             hours(sample(0:23, 336, replace = TRUE)) +
+             minutes(sample(0:59, 336, replace = TRUE)),
+  data_version = rep(1, 336)
+)
+
+# Calculate ended time and session_duration
+shiny_rsc <- shiny_rsc %>%
+  mutate(
+    session_duration = sample(30:7200, 336, replace = TRUE),
+    ended = started + seconds(session_duration)
+  )
+
+#View(shiny_rsc)
+
+# Generate shiny_rsc_titles (GUIDs and human-readable names)
+shiny_rsc_titles <- tibble(
+  content_guid = content_guids,
+  content_name = content_names
+)
+
+#View(shiny_rsc_titles)
+
+# Perform the join
+merged_df <- shiny_rsc %>%
+  inner_join(shiny_rsc_titles, by = "content_guid")
+
+# Display the merged dataset (you can use View(merged_df) in RStudio to inspect)
+#View(merged_df)
+
+############################################################
+
+# Vous avez déjà shiny_rsc, donc on le conserve tel quel.
+
+# Simulons le dataframe content, qui représente l'usage des contenus statiques
+content <- tibble(
+  content_guid = sample(content_guids, 100, replace = TRUE),  # Les mêmes GUIDs que dans shiny_rsc
+  user_guid = sample(user_guids, 100, replace = TRUE),  # Les mêmes users que dans shiny_rsc
+  started = start_date + days(sample(0:30, 100, replace = TRUE)) +
+             hours(sample(0:23, 100, replace = TRUE)) +
+             minutes(sample(0:59, 100, replace = TRUE)),  # Simule les dates de sessions
+  data_version = rep(1, 100),  # Version des données
+  session_duration = sample(60:3600, 100, replace = TRUE)  # Durée des sessions entre 1 min et 1h
+)
+
+# Calcul de l'heure de fin de session pour 'content'
+content <- content %>%
+  mutate(ended = started + seconds(session_duration))
+
+# Créons la liste data_arr avec shiny_rsc et content
+data_arr <- list(
+  shiny = shiny_rsc,   # Les données d'utilisation des apps Shiny
+  content = content    # Les données d'utilisation des contenus statiques
+)
+
+# Liste des user_guids (guid d'utilisateurs) et noms d'utilisateurs (username)
+#user_guids <- paste0("user_", 1:20)  # Les mêmes identifiants que ceux dans shiny_rsc
+
+# Simuler des noms d'utilisateur cohérents
+usernames <- paste0("user", 1:20, "_name")
+
+# Simuler la table all_users pour les 20 utilisateurs identifiés
+all_users <- tibble(
+  guid = paste0("user_", 1:20),  # Identifiants d'utilisateur (guids) pour les utilisateurs identifiés
+  username = usernames           # Noms d'utilisateur correspondants
+)
+
+# Affichons un aperçu de la table simulée
+#glimpse(all_users)
+
+# Affichons la structure de la liste pour vérifier
+#str(data_arr)
+
+############################################################
+
+
+thematic::thematic_rmd(font = "Open Sans")
+
+# days_back <- as.numeric(Sys.getenv("DAYSBACK", 30))
+#  
+# default_content_title <- "Unknown (Deleted Content?)"
+# 
+# report_from <- lubridate::today() - lubridate::ddays(days_back)
+
+# Nombre de jours en arrière pour simuler la collecte de données (par exemple 30 jours)
+days_back <- 30  
+
+# Cette variable spécifie le titre par défaut qui sera utilisé pour les contenus qui n'ont pas de titre défini
+default_content_title <- "Unknown (Deleted Content?)"
+
+# Date de début de collecte des données, simulée comme remontant à 30 jours
+report_from <- lubridate::today() - lubridate::ddays(days_back)
+
+# client <- connect()
+# shiny <- get_usage_shiny(
+#   client,
+#   from = report_from,
+#   limit = Inf
+# ) %>%
+#   mutate(
+#     started = lubridate::ymd_hms(started),
+#     ended = lubridate::ymd_hms(ended),
+#     session_duration = ended - started
+#     ) %>%
+#   filter(session_duration > lubridate::dseconds(5))
+# content <- get_usage_static(
+#   client,
+#   from = report_from,
+#   limit = Inf
+# )
+# 
+# all_users <- get_users(client, page_size = 500)
+# 
+# data_arr <-   list(shiny = shiny, content = content)
+
+```
+
+
+This Report was generated on `r format(Sys.time(), "%A, %B %d, %Y at %I:%M %p (%Z)")`. Data is limited to the last `r days_back` days.
+
+Column 
+-----------------------------------------------------------------------
+
+### Shiny Sessions by User (Top 5)
+
+```{r shiny_by_user}
+data_arr$shiny %>%
+    group_by(user_guid) %>% 
+    summarise(visits = n()) %>% 
+    left_join(all_users, by = c(user_guid = "guid")) %>%
+    mutate(username = coalesce(username, "anonymous")) %>%
+    select(username, visits) %>% 
+    arrange(desc(visits)) %>% 
+    head(5) %>% 
+    {ggplot(., aes(reorder(username, visits), visits)) + 
+     geom_bar(stat = "identity", fill="#447099") +  
+     coord_flip() + 
+     theme_minimal() + 
+     labs(
+       y = "Number of Shiny Sessions",
+       x = NULL
+     ) + theme(legend.position="none")} %>% 
+    ggplotly(tooltip = c("y")) %>% 
+    config(displayModeBar = F)
+```
+
+### Static Content Hits by User (Top 5)
+
+```{r static_by_user}
+data_arr$content %>%
+    group_by(user_guid) %>% 
+    summarise(visits = n()) %>% 
+    left_join(all_users, by = c(user_guid = "guid")) %>%
+    mutate(username = coalesce(username, "anonymous")) %>% 
+    select(username, visits) %>% 
+    arrange(desc(visits)) %>% 
+    head(5) %>% 
+    {ggplot(., aes(reorder(username, visits), visits)) + 
+     geom_bar(stat = "identity", fill="#447099") +  
+     coord_flip() + 
+     theme_minimal() +
+     labs(
+       y = "Number of Content Visits",
+       x = NULL
+     ) + theme(legend.position="none")} %>% 
+    ggplotly(tooltip = c("y")) %>% 
+    config(displayModeBar = F)
+```
+
+
+
+Column 
+-----------------------------------------------------------------------
+
+### Shiny Sessions Over Time
+
+```{r shiny_over_time}
+data_arr$shiny %>%
+    mutate(day = round_date(started, "day")) %>% 
+    filter(day > today() - ddays(days_back)) %>% 
+    group_by(day) %>% 
+    summarise(visits = n()) %>% 
+    arrange(desc(visits)) %>% 
+    {ggplot(., aes(day, visits)) + 
+     geom_point() +
+     geom_smooth(se = FALSE) +
+     theme_minimal() + 
+     labs(
+       y = "# of Shiny Sessions",
+       x = NULL
+     ) + theme(legend.position="none")} %>% 
+    ggplotly(tooltip = c("y")) %>% 
+    config(displayModeBar = F)
+```
+
+
+### Static Content Visits Over Time
+
+```{r static_over_time}
+# data_arr$content %>%
+#     mutate(time = ymd_hms(time),
+#           day = round_date(time, "day")) %>% 
+#     filter(day > today() - ddays(days_back)) %>% 
+#     group_by(day) %>% 
+#     summarise(visits = n()) %>% 
+#     arrange(desc(visits)) %>% 
+#     {ggplot(., aes(day, visits)) + 
+#      geom_point() +
+#      geom_smooth(se = FALSE) +
+#      theme_minimal() + 
+#      labs(
+#        y = "Content Hits",
+#        x = NULL
+#      ) + theme(legend.position="none")} %>% 
+#     ggplotly(tooltip = c("y")) %>% 
+#     config(displayModeBar = F)
+
+data_arr$content %>%
+    mutate(day = round_date(started, "day")) %>%  # Remplacer 'time' par 'started'
+    filter(day > today() - ddays(days_back)) %>% 
+    group_by(day) %>% 
+    summarise(visits = n()) %>% 
+    arrange(desc(visits)) %>% 
+    {ggplot(., aes(day, visits)) + 
+     geom_point() +
+     geom_smooth(se = FALSE) +
+     theme_minimal() + 
+     labs(
+       y = "Content Hits",
+       x = NULL
+     ) + theme(legend.position="none")} %>% 
+    ggplotly(tooltip = c("y")) %>% 
+    config(displayModeBar = F)
+
+```
+
+Column 
+-----------------------------------------------------------------------
+
+### Top Applications
+
+```{r top_shiny}
+# data_arr$shiny %>% 
+#   group_by(content_guid) %>% 
+#   summarize(visits = n()) %>% 
+#   arrange(desc(visits)) %>% 
+#   head() %>% 
+#   mutate(name = purrr::map_chr(content_guid, ~ content_title(client, .x, default_content_title))) %>% 
+#   {ggplot(., aes(reorder(stringr::str_wrap(name, 30), visits), visits)) + 
+#      geom_bar(stat = "identity", fill="#447099") +  
+#      coord_flip() + 
+#      theme_minimal() + 
+#      labs(
+#        y = "# of Shiny Sessions",
+#        x = NULL
+#      ) + theme(legend.position="none")} %>% 
+#     ggplotly(tooltip = c("y")) %>% 
+#     layout(margin = list(l = 0)) %>%
+#     config(displayModeBar = F)
+
+data_arr$shiny %>% 
+  group_by(content_guid) %>% 
+  summarize(visits = n()) %>% 
+  arrange(desc(visits)) %>% 
+  head() %>% 
+  left_join(shiny_rsc_titles, by = "content_guid") %>%  # Joindre les titres simulés
+  {ggplot(., aes(reorder(stringr::str_wrap(content_name, 30), visits), visits)) + 
+     geom_bar(stat = "identity", fill="#447099") +  
+     coord_flip() + 
+     theme_minimal() + 
+     labs(
+       y = "# of Shiny Sessions",
+       x = NULL
+     ) + theme(legend.position="none")} %>% 
+    ggplotly(tooltip = c("y")) %>% 
+    layout(margin = list(l = 0)) %>%
+    config(displayModeBar = F)
+
+```
+
+### Top Static Content
+
+```{r top_static}
+# data_arr$content %>% 
+#   group_by(content_guid) %>% 
+#   summarize(visits = n()) %>% 
+#   arrange(desc(visits)) %>% 
+#   head() %>% 
+#   mutate(name = purrr::map_chr(content_guid, ~ content_title(client, .x, default_content_title))) %>% 
+#   {ggplot(., aes(reorder(stringr::str_wrap(name, 30), visits), visits)) + 
+#      geom_bar(stat = "identity", fill="#447099") +  
+#      coord_flip() + 
+#      theme_minimal() + 
+#      labs(
+#        y = "Content Hits",
+#        x = NULL
+#      ) + theme(legend.position="none")} %>% 
+#     ggplotly(tooltip = c("y")) %>% 
+#     layout(margin = list(l = 0)) %>%
+#     config(displayModeBar = F)
+
+data_arr$content %>% 
+  group_by(content_guid) %>% 
+  summarize(visits = n()) %>% 
+  arrange(desc(visits)) %>% 
+  head() %>% 
+  left_join(shiny_rsc_titles, by = "content_guid") %>%  # Joindre les titres simulés
+  {ggplot(., aes(reorder(stringr::str_wrap(content_name, 30), visits), visits)) + 
+     geom_bar(stat = "identity", fill="#447099") +  
+     coord_flip() + 
+     theme_minimal() + 
+     labs(
+       y = "Content Hits",
+       x = NULL
+     ) + theme(legend.position="none")} %>% 
+    ggplotly(tooltip = c("y")) %>% 
+    layout(margin = list(l = 0)) %>%
+    config(displayModeBar = F)
+
+```
+
+
+```{r render_custom_email}
+render_connect_email(input = "usage-email.Rmd") %>%
+  attach_connect_email(
+    subject =  sprintf(" Content Usage Report For %s", month(today(), label = TRUE, abbr = FALSE))
+  )
+```

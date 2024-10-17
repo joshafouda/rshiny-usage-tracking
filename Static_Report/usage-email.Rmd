@@ -1,0 +1,92 @@
+---
+title: "Content Usage Report"
+output: blastula::blastula_email
+editor_options: 
+  chunk_output_type: console
+---
+```{r setup_email, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+default_content_title <- "Unknown (Deleted Content?)"
+```
+
+```{r custom_email}
+# content_summary <- data_arr$content %>% 
+#   group_by(content_guid) %>% 
+#   summarize(visits = n()) %>% 
+#   arrange(desc(visits)) %>% 
+#   head() %>% 
+#   mutate(name = purrr::map_chr(content_guid, ~ content_title(client, .x, default_content_title)))
+# 
+# app_summary <- data_arr$shiny %>% 
+#   group_by(content_guid) %>% 
+#   summarize(visits = n()) %>% 
+#   arrange(desc(visits)) %>% 
+#   head() %>% 
+#   mutate(name = purrr::map_chr(content_guid, ~ content_title(client, .x, default_content_title)))
+# 
+# leaderboard <- dplyr::bind_rows(app_summary, content_summary) %>%
+#   arrange(desc(visits)) %>%
+#   ggplot(., aes(reorder(name, visits), visits)) + 
+#      geom_bar(stat = "identity", fill="#447099") +  
+#      coord_flip() + 
+#      theme_minimal() + 
+#      labs(
+#        y = "Visits",
+#        x = NULL
+#      )
+
+content_summary <- data_arr$content %>%
+  group_by(content_guid) %>%
+  summarize(visits = n()) %>%
+  arrange(desc(visits)) %>%
+  head() %>%
+  mutate(name = case_when(
+    content_guid == "guid_1" ~ "No-Code Modeling App",
+    content_guid == "guid_2" ~ "Sales Dashboard",
+    content_guid == "guid_3" ~ "Marketing Report",
+    content_guid == "guid_4" ~ "Data Analysis Tool",
+    content_guid == "guid_5" ~ "Executive Report",
+    TRUE ~ default_content_title
+  ))
+
+app_summary <- data_arr$shiny %>%
+  group_by(content_guid) %>%
+  summarize(visits = n()) %>%
+  arrange(desc(visits)) %>%
+  head() %>%
+  mutate(name = case_when(
+    content_guid == "guid_1" ~ "No-Code Modeling App",
+    content_guid == "guid_2" ~ "Sales Dashboard",
+    content_guid == "guid_3" ~ "Marketing Report",
+    content_guid == "guid_4" ~ "Data Analysis Tool",
+    content_guid == "guid_5" ~ "Executive Report",
+    TRUE ~ default_content_title
+  ))
+
+
+leaderboard <- dplyr::bind_rows(app_summary, content_summary) %>%
+  arrange(desc(visits)) %>%
+  ggplot(., aes(reorder(name, visits), visits)) + 
+     geom_bar(stat = "identity", fill="#447099") +  
+     coord_flip() + 
+     theme_minimal() + 
+     labs(
+       y = "Visits",
+       x = NULL
+     )
+
+```
+
+Hi Data Science Team!
+
+Here is the top viewed content for the last `r days_back` days:
+
+```{r add_plot_prep,  message=FALSE}
+
+blastula::add_ggplot(leaderboard)
+```
+
+Best,
+
+Posit Connect
