@@ -120,7 +120,7 @@ ui <- dashboardPage(
     ),
     tabsetPanel(
       tabPanel(
-        title = "Example",
+        title = "Overview",
         fluidRow(
           shinycssloaders::withSpinner(
             apexchartOutput("shiny_time")
@@ -190,13 +190,32 @@ ui <- dashboardPage(
         ),
         
         # Second output: Total users logged each hour
+        # fluidRow(
+        #   box(
+        #     title = "Total users logged each hour", 
+        #     width = 12,
+        #     apexchartOutput("total_users_logged_each_hour") %>%
+        #       shinycssloaders::withSpinner()
+        #   )
+        # )
+        
         fluidRow(
           box(
-            title = "Total users logged each hour", 
-            width = 12,
-            apexchartOutput("total_users_logged_each_hour") %>%
-              shinycssloaders::withSpinner()
+            title = "Select User",
+            selectInput(
+              inputId = "user_filter",
+              label = "Choose a user:",
+              choices = NULL,  # Populated by server dynamically
+              selected = NULL
+            ),
+            width = 12
           )
+        ),
+        fluidRow(
+          valueBoxOutput("user_hours_spent", width = 3),
+          valueBoxOutput("user_days_logged", width = 3),
+          valueBoxOutput("user_actions_executed", width = 3),
+          valueBoxOutput("user_first_login", width = 3)
         )
       )
       
@@ -483,59 +502,160 @@ server <- function(input, output, session) {
   
   #################################### Sorties de Users specifics stats #####################
   
-  output$users_logged_each_day <- renderApexchart({
-    
-    # Data preparation for stacked bar chart (Returning vs New)
-    logged_users <- shiny_rsc %>%
-      mutate(day = lubridate::floor_date(started, "day")) %>%  # Round to the day
+  # Helper function to classify users as new or returning
+  classify_users <- function(df) {
+    df %>%
       group_by(user_guid) %>%
-      summarize(first_login_day = min(day)) %>%
-      ungroup() %>%
-      right_join(shiny_rsc %>% mutate(day = lubridate::floor_date(started, "day")), by = "user_guid") %>%
-      mutate(user_type = if_else(day == first_login_day, "New User", "Returning User")) %>%
-      group_by(day, user_type) %>%
-      summarise(user_count = n()) %>%
-      tidyr::pivot_wider(names_from = user_type, values_from = user_count, values_fill = list(user_count = 0))
+      mutate(
+        first_login = min(lubridate::floor_date(started, "day")),
+        is_returning = if_else(started > first_login, "Returning", "New")
+      ) %>%
+      ungroup()
+  }
+  
+  # Reactive data for users logged each day (reactive to content_filter)
+  filtered_users_logged_each_day <- reactive({
+    data <- filtered_shiny() %>%
+      classify_users() %>%
+      mutate(day = lubridate::floor_date(started, "day")) %>%
+      group_by(day, is_returning) %>%
+      summarize(count = n()) %>%
+      arrange(day)
     
-    # Create the stacked bar chart
-    apex(
-      data = logged_users,
-      type = "bar",
-      mapping = aes(x = day)
-    ) %>%
-      ax_series(list(
-        name = "New User",
-        data = logged_users$`New User`
-      )) %>%
-      ax_series(list(
-        name = "Returning User",
-        data = logged_users$`Returning User`
-      )) %>%
-      ax_chart(stacked = TRUE) %>%
-      ax_xaxis(type = "datetime", title = list(text = "Date"), labels = list(format = "dd MMM yyyy")) %>%
-      ax_yaxis(title = list(text = "Number of Users")) %>%
-      ax_title(text = "Users logged each day (Returning vs New)")
+    return(data)
   })
   
-  output$total_users_logged_each_hour <- renderApexchart({
-    
-    # Data preparation for hourly total users logged
-    hourly_users <- shiny_rsc %>%
-      mutate(day = lubridate::floor_date(started, "day"), hour = lubridate::hour(started)) %>%
+  # Render bar chart for users logged each day (stacked bar chart)
+  output$users_logged_each_day <- renderApexchart({
+    apexchart() %>%
+      ax_chart(type = "bar", stacked = TRUE) %>%
+      ax_plotOptions(bar = list(horizontal = FALSE)) %>%
+      ax_title("Users Logged Each Day (Returning vs New)") %>%
+      ax_xaxis(type = "datetime", categories = filtered_users_logged_each_day()$day) %>%
+      ax_series(list(
+        name = "Returning Users",
+        data = filtered_users_logged_each_day() %>%
+          filter(is_returning == "Returning") %>%
+          pull(count)
+      )) %>%
+      ax_series(list(
+        name = "New Users",
+        data = filtered_users_logged_each_day() %>%
+          filter(is_returning == "New") %>%
+          pull(count)
+      )) %>%
+      ax_yaxis(title = list(text = "Number of Users")) %>%
+      ax_colors(c("#447099", "#E4572E"))
+  })
+  
+  # Reactive data for total users logged each hour per day (reactive to content_filter)
+  filtered_users_logged_each_hour <- reactive({
+    filtered_shiny() %>%
+      mutate(
+        day = lubridate::floor_date(started, "day"),
+        hour = lubridate::hour(started)
+      ) %>%
       group_by(day, hour) %>%
-      summarise(total_users = n()) %>%
+      summarize(count = n()) %>%
       arrange(day, hour)
+  })
+  
+  # Render heatmap for total users logged each hour per day
+  # output$total_users_logged_each_hour <- renderApexchart({
+  #   apexchart() %>%
+  #     ax_chart(type = "heatmap") %>%
+  #     ax_title("Total Users Logged Each Hour per Day") %>%
+  #     ax_xaxis(type = "category", labels = list(format = "%b %d", rotate = -45)) %>%
+  #     ax_yaxis(labels = list(formatter = JS("function(val) { return val + ':00'; }")), 
+  #              title = list(text = "Hour of Day")) %>%
+  #     ax_plotOptions(heatmap = list(
+  #       shadeIntensity = 0.5,
+  #       colorScale = list(
+  #         ranges = list(
+  #           list(from = 0, to = 0, color = "#f2f2f2"),
+  #           list(from = 1, to = 5, color = "#99ccff"),
+  #           list(from = 6, to = 10, color = "#0066cc"),  # Ensure comma is present here
+  #           list(from = 11, to = 20, color = "#003399"), # Ensure comma is present here
+  #           list(from = 21, to = 50, color = "#000066")
+  #         )
+  #       )
+  #     )) %>%
+  #     ax_series(list(
+  #       name = "Users",
+  #       data = purrr::map2(filtered_users_logged_each_hour()$day, 
+  #                          filtered_users_logged_each_hour()$hour, 
+  #                          filtered_users_logged_each_hour()$count, 
+  #                          ~ list(x = .x, y = .y, z = .z))
+  #     )) %>%
+  #     ax_colors("#0066cc")
+  # })
+  
+  # Populate selectInput choices with users filtered by content
+  observe({
+    updateSelectInput(
+      session,
+      inputId = "user_filter",
+      choices = unique(filtered_shiny()$user_guid[!is.na(filtered_shiny()$user_guid)])
+    )
+  })
+  
+  # Reactive expression to filter by selected user
+  filtered_user_data <- reactive({
+    req(input$user_filter)
+    filtered_shiny() %>%
+      filter(user_guid == input$user_filter)
+  })
+  
+  # Value box 1: Hours the user spent on the app
+  output$user_hours_spent <- renderValueBox({
+    total_hours <- filtered_user_data() %>%
+      summarise(hours_spent = sum(session_duration) / 3600) %>%
+      pull(hours_spent)
     
-    # Create bar chart for users logged each hour
-    apex(
-      data = hourly_users,
-      type = "bar",
-      mapping = aes(x = day, y = total_users, fill = as.factor(hour))
-    ) %>%
-      ax_xaxis(type = "datetime", title = list(text = "Date"), labels = list(format = "dd MMM yyyy")) %>%
-      ax_yaxis(title = list(text = "Total Users Logged")) %>%
-      ax_title(text = "Total users logged each hour") %>%
-      ax_legend(position = "right")
+    valueBox(
+      round(total_hours, 1), "Hours Spent",
+      icon = icon("clock"),
+      color = "purple"
+    )
+  })
+  
+  # Value box 2: Days the user logged
+  output$user_days_logged <- renderValueBox({
+    days_logged <- filtered_user_data() %>%
+      summarise(days_logged = n_distinct(lubridate::floor_date(started, "day"))) %>%
+      pull(days_logged)
+    
+    valueBox(
+      days_logged, "Days Logged",
+      icon = icon("calendar-alt"),
+      color = "green"
+    )
+  })
+  
+  # Value box 3: Actions the user executed (Approximating as number of sessions opened)
+  output$user_actions_executed <- renderValueBox({
+    actions_executed <- filtered_user_data() %>%
+      summarise(sessions_opened = n()) %>%
+      pull(sessions_opened)
+    
+    valueBox(
+      actions_executed, "Sessions Opened",
+      icon = icon("mouse-pointer"),
+      color = "blue"
+    )
+  })
+  
+  # Value box 4: Date of the user's first login
+  output$user_first_login <- renderValueBox({
+    first_login <- filtered_user_data() %>%
+      summarise(first_login = min(started)) %>%
+      pull(first_login)
+    
+    valueBox(
+      as.character(lubridate::date(first_login)), "First Login",
+      icon = icon("sign-in-alt"),
+      color = "yellow"
+    )
   })
   
 }
