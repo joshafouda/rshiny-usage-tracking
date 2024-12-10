@@ -14,10 +14,6 @@ content_data <- read.csv("content.csv") # Replace with actual path
 content_choices <- c("All" = "all",
                      setNames(as.character(content_data$guid), content_data$title))
 
-# Create a named list for the user dropdown
-user_choices <- c("All Users" = "all",
-                  setNames(as.character(users_data$guid), users_data$username))
-
 # Define the UI
 ui <- fluidPage(
   titlePanel("Content Usage Tracker"),
@@ -36,8 +32,8 @@ ui <- fluidPage(
       selectInput(
         inputId = "user_select",
         label = "Select User",
-        choices = user_choices,
-        selected = "all"
+        choices = NULL,
+        selected = NULL
       )
     ),
     
@@ -357,14 +353,23 @@ server <- function(input, output, session) {
   
   ##################################### User Specific Stats ###########################################
   
+  # Populate selectInput choices with users filtered by content
+  observe({
+    updateSelectInput(
+      session,
+      inputId = "user_select",
+      choices = setNames(as.character(users_data$guid), users_data$username)
+    )
+  })
+  
   # Reactive data filtered by user selection
   filtered_user_usage <- reactive({
-    if (input$user_select == "all") {
-      filtered_usage()
-    } else {
-      filtered_usage() %>% filter(user_guid == input$user_select)
-    }
+    req(input$user_select)
+    filtered_usage() %>% 
+      filter(user_guid == input$user_select)
   })
+  
+  # Render outputs (e.g., value boxes and plots) based on `filtered_user_usage`
   
   # 1. Bar chart: Users Logged Each Day (Returning vs New)
   output$users_logged_daily_plot <- renderPlotly({
@@ -428,8 +433,11 @@ server <- function(input, output, session) {
   
   output$first_login <- renderValueBox({
     first_login <- filtered_user_usage() %>%
-      summarise(first_date = min(as.Date(started, na.rm = TRUE))) %>%
+      summarise(first_date = min(as.Date(started), na.rm = TRUE)) %>%
       pull(first_date)
+    
+    # Handle empty or invalid dates
+    first_login <- ifelse(is.infinite(first_login), "No Data", first_login)
     
     valueBox(
       first_login,
