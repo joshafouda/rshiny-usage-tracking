@@ -54,7 +54,7 @@ ui <- dashboardPage(
     tabsetPanel(
       tabPanel(
         title = "Overview",
-        icon = icon("chart-line"),
+        icon = icon("home"),
         fluidRow(
           shinycssloaders::withSpinner(
             plotlyOutput("daily_trends_plot")
@@ -139,7 +139,7 @@ ui <- dashboardPage(
       # App Mode Analysis
       tabPanel(
         title = "App Mode Analysis",
-        icon = icon("cogs"),
+        icon = icon("tasks"),
         fluidRow(
           # Pie Chart (Donut Chart) for Share of Shiny, Python, Other
           box(
@@ -196,7 +196,7 @@ ui <- dashboardPage(
       
       
       # New Menu: Content Insights
-      tabPanel("Content Insights", value = "content_insights",
+      tabPanel("Content Insights", icon = icon("cogs"), value = "content_insights",
                # 1. Heatmap
                fluidRow(
                  column(12,
