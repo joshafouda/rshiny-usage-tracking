@@ -7,14 +7,10 @@ library(DT)
 
 # Load the necessary data
 usage_data <- read.csv("usage.csv") # Replace with actual path
-View(usage_data)
 users_data <- read.csv("users.csv") # Replace with actual path
-View(users_data)
 content_data <- read.csv("content.csv") # Replace with actual path
-View(content_data)
 
 # Create a named list for the dropdown with unique content
-
 content_choices <- c(
   "All" = "all", 
   setNames(as.character(content_data$guid), content_data$title)
