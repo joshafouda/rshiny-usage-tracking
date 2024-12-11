@@ -137,6 +137,47 @@ ui <- dashboardPage(
         )
       ),
       
+      # App Mode Analysis
+      tabPanel(
+        title = "App Mode Analysis",
+        
+        fluidRow(
+          # Pie Chart (Donut Chart) for Share of Shiny, Python, Other
+          box(
+            title = "Share of Content by App Mode",
+            width = 6,
+            plotlyOutput("app_mode_pie_chart") %>%
+              shinycssloaders::withSpinner()
+          ),
+          
+          # Bar Chart for Number of Sessions by App Mode
+          box(
+            title = "Number of Sessions by App Mode",
+            width = 6,
+            plotlyOutput("app_mode_bar_chart") %>%
+              shinycssloaders::withSpinner()
+          )
+        ),
+        
+        fluidRow(
+          # Table for Summary Statistics
+          box(
+            title = "App Mode Summary Statistics",
+            width = 6,
+            dataTableOutput("app_mode_summary_table") %>%
+              shinycssloaders::withSpinner()
+          ),
+          
+          # List of Users by App Mode
+          box(
+            title = "Users by App Mode",
+            width = 6,
+            uiOutput("app_mode_user_list")  # Dynamic output to display usernames
+          )
+        )
+      ),
+      
+      
       # New Menu: Content Insights
       tabPanel("Content Insights", value = "content_insights",
                # 1. Heatmap
@@ -489,6 +530,104 @@ server <- function(input, output, session) {
       "First Login",
       icon = icon("calendar-alt"),
       color = "purple"
+    )
+  })
+  
+  
+  ################################# App Mode Analysis #############################################
+  
+  # Reactive data for app_mode filtered by content selection and date range
+  filtered_content <- reactive({
+    content_data %>%
+      filter(
+        (input$content_select == "all" | guid == input$content_select) &
+          guid %in% filtered_usage()$content_guid
+      )
+  })
+  
+  # Reactive for app_mode and sessions
+  app_mode_data <- reactive({
+    # Merge content and usage data to calculate total sessions by app_mode
+    filtered_usage() %>%
+      left_join(content_data, by = c("content_guid" = "guid")) %>%
+      group_by(app_mode) %>%
+      summarise(
+        total_content = n_distinct(content_guid),
+        total_sessions = n(),  # Count sessions
+        avg_session_duration = mean(session_duration, na.rm = TRUE) / 60  # Convert to minutes
+      )
+  })
+  
+  
+  # 1. Donut Chart: Share of Content by App Mode
+  output$app_mode_pie_chart <- renderPlotly({
+    pie_data <- filtered_content() %>%
+      count(app_mode) %>%
+      mutate(percentage = n / sum(n) * 100)
+    
+    plot_ly(
+      data = pie_data,
+      labels = ~app_mode,
+      values = ~n,
+      type = "pie",
+      hole = 0.4,
+      textinfo = "label+percent",
+      insidetextorientation = "radial"
+    ) %>%
+      layout(title = "Share of Content by App Mode")
+  })
+  
+  # 2. Bar Chart: Number of Sessions by App Mode
+  output$app_mode_bar_chart <- renderPlotly({
+    bar_data <- filtered_usage() %>%
+      left_join(content_data, by = c("content_guid" = "guid")) %>%
+      group_by(app_mode) %>%
+      summarise(sessions = n())
+    
+    plot_ly(
+      data = bar_data,
+      x = ~app_mode,
+      y = ~sessions,
+      type = "bar",
+      text = ~sessions,
+      textposition = "auto",
+      name = "Sessions"
+    ) %>%
+      layout(
+        title = "Number of Sessions by App Mode",
+        xaxis = list(title = "App Mode"),
+        yaxis = list(title = "Number of Sessions")
+      )
+  })
+  
+  # 3. Summary Table: Statistics for App Mode
+  output$app_mode_summary_table <- renderDataTable({
+    app_mode_data() %>%
+      mutate(avg_session_duration = round(avg_session_duration / 60, 2)) %>%  # Convert to minutes
+      rename(
+        "App Mode" = app_mode,
+        "Total Content Items" = total_content,
+        "Total Sessions" = total_sessions,
+        "Avg Session Duration (mins)" = avg_session_duration
+      )
+  })
+  
+  # 4. Users by App Mode
+  output$app_mode_user_list <- renderUI({
+    users_by_mode <- filtered_usage() %>%
+      left_join(content_data, by = c("content_guid" = "guid")) %>%
+      group_by(app_mode) %>%
+      summarise(users = paste(unique(users_data$username[users_data$guid %in% user_guid]), collapse = ", "))
+    
+    tagList(
+      h4("Users by App Mode"),
+      p("Below is the list of users for each app mode:"),
+      lapply(1:nrow(users_by_mode), function(i) {
+        div(
+          h5(strong(users_by_mode$app_mode[i])),
+          p(users_by_mode$users[i])
+        )
+      })
     )
   })
   
