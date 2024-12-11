@@ -54,6 +54,7 @@ ui <- dashboardPage(
     tabsetPanel(
       tabPanel(
         title = "Overview",
+        icon = icon("chart-line"),
         fluidRow(
           shinycssloaders::withSpinner(
             plotlyOutput("daily_trends_plot")
@@ -77,6 +78,7 @@ ui <- dashboardPage(
       
       tabPanel(
         title = "General Stats",
+        icon = icon("chart-bar"),
         fluidRow(
           valueBoxOutput("unique_users", width = 2),   # # of Unique users (with Logins)
           valueBoxOutput("anonymous_users", width = 2),  # # of Anonymous Users
@@ -103,6 +105,7 @@ ui <- dashboardPage(
       
       tabPanel(
         title = "User specific stats",
+        icon = icon("user"),
         # First output: Stacked bar chart for Users logged each day
         fluidRow(
           box(
@@ -136,7 +139,7 @@ ui <- dashboardPage(
       # App Mode Analysis
       tabPanel(
         title = "App Mode Analysis",
-        
+        icon = icon("cogs"),
         fluidRow(
           # Pie Chart (Donut Chart) for Share of Shiny, Python, Other
           box(
