@@ -172,8 +172,26 @@ ui <- dashboardPage(
           box(
             title = "Users by App Mode",
             width = 6,
-            uiOutput("app_mode_user_list")  # Dynamic output to display usernames
+            fluidRow(
+              column(
+                12,
+                selectInput(
+                  inputId = "app_mode_select",
+                  label = "Select App Mode",
+                  choices = NULL,  # Choices will be dynamically populated in the server
+                  selected = NULL
+                )
+              )
+            ),
+            fluidRow(
+              column(
+                12,
+                dataTableOutput("users_by_app_mode_table") %>%
+                  shinycssloaders::withSpinner()
+              )
+            )
           )
+        
         )
       ),
       
@@ -558,6 +576,22 @@ server <- function(input, output, session) {
       )
   })
   
+  # Populate the Dropdown with App Modes
+  observe({
+    # Extract unique app modes from the content data
+    app_modes <- filtered_content() %>%
+      pull(app_mode) %>%
+      unique()
+    
+    # Update the dropdown options dynamically
+    updateSelectInput(
+      session,
+      "app_mode_select",
+      choices = app_modes,
+      selected = app_modes[1]  # Default to the first app mode
+    )
+  })
+  
   
   # 1. Donut Chart: Share of Content by App Mode
   output$app_mode_pie_chart <- renderPlotly({
@@ -613,23 +647,33 @@ server <- function(input, output, session) {
   })
   
   # 4. Users by App Mode
-  output$app_mode_user_list <- renderUI({
-    users_by_mode <- filtered_usage() %>%
-      left_join(content_data, by = c("content_guid" = "guid")) %>%
-      group_by(app_mode) %>%
-      summarise(users = paste(unique(users_data$username[users_data$guid %in% user_guid]), collapse = ", "))
+  # Reactive expression to filter users based on the selected app mode
+  filtered_users_by_app_mode <- reactive({
+    req(input$app_mode_select)
     
-    tagList(
-      h4("Users by App Mode"),
-      p("Below is the list of users for each app mode:"),
-      lapply(1:nrow(users_by_mode), function(i) {
-        div(
-          h5(strong(users_by_mode$app_mode[i])),
-          p(users_by_mode$users[i])
-        )
-      })
-    )
+    # Filter content and usage data for the selected app mode
+    relevant_content <- filtered_content() %>%
+      filter(app_mode == input$app_mode_select)
+    
+    relevant_usage <- filtered_usage() %>%
+      filter(content_guid %in% relevant_content$guid)
+    
+    # Get user information
+    relevant_usage %>%
+      left_join(users_data, by = c("user_guid" = "guid")) %>%
+      select(username, email) %>%
+      distinct()
   })
+  
+  # Render the table of users by app mode
+  output$users_by_app_mode_table <- renderDataTable({
+    filtered_users_by_app_mode() %>%
+      rename(
+        "Username" = username,
+        "Email" = email
+      )
+  }, options = list(pageLength = 10, autoWidth = TRUE))
+  
   
   #############################################################################################
   
