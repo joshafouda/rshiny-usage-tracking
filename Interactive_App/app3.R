@@ -32,12 +32,25 @@ ui <- dashboardPage(
   
   dashboardBody(
     box(
-      # Dropdown menu to select content
-      selectInput(
-        inputId = "content_select",
-        label = "Select Content",
-        choices = content_choices,
-        selected = "all"
+      fluidRow(
+        column(6,
+               # Dropdown menu to select content
+               selectInput(
+                 inputId = "content_select",
+                 label = "Select Content",
+                 choices = content_choices,
+                 selected = "all"
+               )
+        ),
+        column(6,
+               # Date Range Input
+               dateRangeInput(
+                 inputId = "date_range",
+                 label = "Select Date Range",
+                 start = NULL, # Default values will be set dynamically
+                 end = NULL    # Default values will be set dynamically
+               )
+        )
       ),
       width = 12
     ),
@@ -155,13 +168,26 @@ ui <- dashboardPage(
 
 server <- function(input, output, session) {
   
-  # Reactive data filtered by content selection
+  # Set default values for date range based on the dataset
+  observe({
+    updateDateRangeInput(
+      session,
+      "date_range",
+      start = min(as.Date(usage_data$started, na.rm = TRUE)),
+      end = max(as.Date(usage_data$ended, na.rm = TRUE)),
+      min = min(as.Date(usage_data$started, na.rm = TRUE)),
+      max = max(as.Date(usage_data$ended, na.rm = TRUE))
+    )
+  })
+  
+  # Reactive data filtered by content and date range
   filtered_usage <- reactive({
-    if (input$content_select == "all") {
-      usage_data
-    } else {
-      usage_data %>% filter(content_guid == input$content_select)
-    }
+    usage_data %>%
+      filter(
+        (input$content_select == "all" | content_guid == input$content_select) &
+          as.Date(started) >= input$date_range[1] &
+          as.Date(ended) <= input$date_range[2]
+      )
   })
   
   # 1. Daily Usage Trends Over Time
